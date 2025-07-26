@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chord Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+    <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+</head>
+<body>
+    <canvas id="waveform-canvas"></canvas>
+    <div class="container">
+        <header>
+            <h1>Chord Generator</h1>
+        </header>
+        
+        <main>
+            <section class="controls">
+                <div class="control-group">
+                    <label for="key-select">Key:</label>
+                    <select id="key-select">
+                        <option value="C">C</option>
+                        <option value="C#">C#/Db</option>
+                        <option value="D">D</option>
+                        <option value="D#">D#/Eb</option>
+                        <option value="E">E</option>
+                        <option value="F">F</option>
+                        <option value="F#">F#/Gb</option>
+                        <option value="G">G</option>
+                        <option value="G#">G#/Ab</option>
+                        <option value="A">A</option>
+                        <option value="A#">A#/Bb</option>
+                        <option value="B">B</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>Mode:</label>
+                    <div class="radio-group">
+                        <input type="radio" id="major" name="mode" value="major" checked>
+                        <label for="major">Major</label>
+                        <input type="radio" id="minor" name="mode" value="minor">
+                        <label for="minor">Minor</label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label for="chord-count">Number of Chords:</label>
+                    <input type="number" id="chord-count" min="1" max="16" value="4">
+                </div>
+                
+                <div class="control-group">
+                    <label for="chord-type">Chord Types:</label>
+                    <select id="chord-type" multiple size="5">
+                        <option value="triad" selected>Triads</option>
+                        <option value="7th">7th Chords</option>
+                        <option value="9th">9th Chords</option>
+                        <option value="sus2">Sus2 Chords</option>
+                        <option value="sus4">Sus4 Chords</option>
+                    </select>
+                    <small style="color: #888;">Hold Ctrl/Cmd to select multiple</small>
+                </div>
+                
+                <div class="control-group">
+                    <label for="randomness-slider">Randomness Level: <span id="randomness-value">50%</span></label>
+                    <input type="range" id="randomness-slider" min="0" max="100" value="50" step="5">
+                    <div class="slider-labels">
+                        <span>Predictable</span>
+                        <span>Balanced</span>
+                        <span>Wild</span>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label for="sound-select">Sound:</label>
+                    <select id="sound-select">
+                        <option value="triangle" selected>Triangle (Default)</option>
+                        <option value="sine">Sine (Soft)</option>
+                        <option value="square">Square (Retro)</option>
+                        <option value="sawtooth">Sawtooth (Bright)</option>
+                        <option value="fmsine">FM Sine (Bell)</option>
+                        <option value="amsine">AM Sine (Vintage)</option>
+                        <option value="fatsawtooth">Fat Sawtooth (Rich)</option>
+                        <option value="fatsquare">Fat Square (Thick)</option>
+                        <option value="fattriangle">Fat Triangle (Warm)</option>
+                        <option value="pulse">Pulse (Electronic)</option>
+                    </select>
+                </div>
+                
+                <button id="generate-btn" class="primary-btn">Generate Progression</button>
+                <button id="random-all-btn" class="primary-btn random-btn">🎲 Random Everything</button>
+            </section>
+            
+            <section class="output">
+                <div id="chord-display" class="chord-display"></div>
+                
+                <div class="playback-controls">
+                    <button id="play-btn" class="secondary-btn" disabled>Play</button>
+                    <button id="export-btn" class="secondary-btn" disabled>Export MIDI</button>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="arpeggio-toggle">
+                        <span>Arpeggiate</span>
+                    </label>
+                    <select id="arpeggio-type" class="arpeggio-select" style="display: none;">
+                        <option value="up">Up</option>
+                        <option value="down">Down</option>
+                        <option value="up-down">Up-Down</option>
+                        <option value="down-up">Down-Up</option>
+                        <option value="random">Random</option>
+                        <option value="chord-tone">Chord Tone</option>
+                    </select>
+                </div>
+                
+                <div id="keyboard-container" class="keyboard-container"></div>
+            </section>
+            
+            <section class="bass-section">
+                <h2>Bass Line</h2>
+                <div class="bass-controls">
+                    <div class="control-group">
+                        <label for="bass-pattern">Bass Pattern:</label>
+                        <select id="bass-pattern">
+                            <option value="root">Root Notes Only</option>
+                            <option value="root-fifth">Root & Fifth</option>
+                            <option value="walking">Walking Bass</option>
+                            <option value="arpeggiated">Arpeggiated</option>
+                            <option value="pedal">Pedal Tone</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="bass-octave">Bass Octave:</label>
+                        <select id="bass-octave">
+                            <option value="2">2 (Lower)</option>
+                            <option value="3" selected>3 (Standard)</option>
+                            <option value="4">4 (Higher)</option>
+                        </select>
+                    </div>
+                    <button id="generate-bass-btn" class="primary-btn" disabled>Generate Bass Line</button>
+                </div>
+                <div id="bass-display" class="bass-display"></div>
+                <div class="bass-playback-controls">
+                    <button id="play-bass-btn" class="secondary-btn" disabled>Play Bass</button>
+                    <button id="play-together-btn" class="secondary-btn" disabled>Play Together</button>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="bass-enabled" checked>
+                        <span>Include Bass in Playback</span>
+                    </label>
+                </div>
+            </section>
+            
+            <section class="drums-section">
+                <h2>Drum Pattern</h2>
+                <div class="drums-controls">
+                    <div class="control-group">
+                        <label for="drum-pattern">Drum Pattern:</label>
+                        <select id="drum-pattern">
+                            <option value="basic-beat">Basic Beat</option>
+                            <option value="rock">Rock</option>
+                            <option value="jazz">Jazz</option>
+                            <option value="latin">Latin</option>
+                            <option value="funk">Funk</option>
+                            <option value="electronic">Electronic</option>
+                            <option value="shuffle">Shuffle</option>
+                            <option value="half-time">Half Time</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="drum-complexity">Complexity:</label>
+                        <select id="drum-complexity">
+                            <option value="simple">Simple</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="complex">Complex</option>
+                        </select>
+                    </div>
+                    <button id="generate-drums-btn" class="primary-btn" disabled>Generate Drum Pattern</button>
+                    <button id="clear-drums-btn" class="secondary-btn" disabled>Clear Pattern</button>
+                </div>
+                <div id="drums-display" class="drums-display"></div>
+                <small style="color: #888; display: block; margin-top: 10px;">Click on the grid to add/remove drum hits</small>
+                <div class="drums-playback-controls">
+                    <button id="play-drums-btn" class="secondary-btn" disabled>Play Drums</button>
+                    <button id="play-all-btn" class="secondary-btn" disabled>Play All</button>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="drums-enabled" checked>
+                        <span>Include Drums in Playback</span>
+                    </label>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

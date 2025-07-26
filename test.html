@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chord Generator Tests</title>
+    <style>
+        body {
+            font-family: monospace;
+            margin: 20px;
+            background-color: #0a0a0a;
+            color: #e0e0e0;
+        }
+        .test-suite {
+            margin-bottom: 20px;
+        }
+        .test-case {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .pass {
+            background-color: #27ae60;
+            color: white;
+        }
+        .fail {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .test-summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #1a1a1a;
+            border-radius: 5px;
+            border: 1px solid #2a2a2a;
+        }
+        pre {
+            background-color: #2a2a2a;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chord Generator Unit Tests</h1>
+    <div id="test-results"></div>
+    <div id="test-summary" class="test-summary"></div>
+
+    <script>
+        // Import the music theory constants and functions from app.js
+        const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const MAJOR_SCALE_PATTERN = [0, 2, 4, 5, 7, 9, 11];
+        const MINOR_SCALE_PATTERN = [0, 2, 3, 5, 7, 8, 10];
+
+        // Copy the getScale function
+        function getScale(key, mode) {
+            const rootIndex = NOTES.indexOf(key);
+            const pattern = mode === 'major' ? MAJOR_SCALE_PATTERN : MINOR_SCALE_PATTERN;
+            
+            return pattern.map(interval => {
+                const noteIndex = (rootIndex + interval) % 12;
+                return NOTES[noteIndex];
+            });
+        }
+
+        // Test framework
+        let testResults = [];
+        let currentSuite = '';
+
+        function describe(suiteName, fn) {
+            currentSuite = suiteName;
+            const suiteDiv = document.createElement('div');
+            suiteDiv.className = 'test-suite';
+            suiteDiv.innerHTML = `<h2>${suiteName}</h2>`;
+            document.getElementById('test-results').appendChild(suiteDiv);
+            fn();
+        }
+
+        function test(testName, fn) {
+            const startTime = performance.now();
+            let passed = false;
+            let error = null;
+            
+            try {
+                fn();
+                passed = true;
+            } catch (e) {
+                error = e;
+            }
+            
+            const duration = performance.now() - startTime;
+            
+            testResults.push({
+                suite: currentSuite,
+                name: testName,
+                passed,
+                error,
+                duration
+            });
+            
+            const testDiv = document.createElement('div');
+            testDiv.className = `test-case ${passed ? 'pass' : 'fail'}`;
+            testDiv.innerHTML = `
+                <strong>${passed ? '✓' : '✗'} ${testName}</strong> (${duration.toFixed(2)}ms)
+                ${error ? `<pre>${error.message}</pre>` : ''}
+            `;
+            
+            const suites = document.querySelectorAll('.test-suite');
+            suites[suites.length - 1].appendChild(testDiv);
+        }
+
+        function assert(condition, message) {
+            if (!condition) {
+                throw new Error(message || 'Assertion failed');
+            }
+        }
+
+        function assertEqual(actual, expected, message) {
+            if (actual !== expected) {
+                throw new Error(message || `Expected ${expected}, but got ${actual}`);
+            }
+        }
+
+        function assertArrayEqual(actual, expected, message) {
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                throw new Error(message || `Expected [${expected.join(', ')}], but got [${actual.join(', ')}]`);
+            }
+        }
+
+        // Run tests
+        describe('Scale Generation Tests', () => {
+            test('C Major scale should have correct notes', () => {
+                const scale = getScale('C', 'major');
+                assertArrayEqual(scale, ['C', 'D', 'E', 'F', 'G', 'A', 'B']);
+            });
+
+            test('A Minor scale should have correct notes', () => {
+                const scale = getScale('A', 'minor');
+                assertArrayEqual(scale, ['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+            });
+
+            test('G Major scale should have F#', () => {
+                const scale = getScale('G', 'major');
+                assertArrayEqual(scale, ['G', 'A', 'B', 'C', 'D', 'E', 'F#']);
+            });
+
+            test('D Major scale should have F# and C#', () => {
+                const scale = getScale('D', 'major');
+                assertArrayEqual(scale, ['D', 'E', 'F#', 'G', 'A', 'B', 'C#']);
+            });
+
+            test('F Major scale should have Bb', () => {
+                const scale = getScale('F', 'major');
+                assertArrayEqual(scale, ['F', 'G', 'A', 'A#', 'C', 'D', 'E']);
+            });
+
+            test('E Minor scale should have F#', () => {
+                const scale = getScale('E', 'minor');
+                assertArrayEqual(scale, ['E', 'F#', 'G', 'A', 'B', 'C', 'D']);
+            });
+
+            test('D Minor scale should have Bb', () => {
+                const scale = getScale('D', 'minor');
+                assertArrayEqual(scale, ['D', 'E', 'F', 'G', 'A', 'A#', 'C']);
+            });
+        });
+
+        describe('Chord Note Validation', () => {
+            test('All notes in C Major I chord should be in C Major scale', () => {
+                const scale = getScale('C', 'major');
+                const chordNotes = ['C', 'E', 'G']; // I chord
+                chordNotes.forEach(note => {
+                    assert(scale.includes(note), `${note} should be in C Major scale`);
+                });
+            });
+
+            test('All notes in A Minor i chord should be in A Minor scale', () => {
+                const scale = getScale('A', 'minor');
+                const chordNotes = ['A', 'C', 'E']; // i chord
+                chordNotes.forEach(note => {
+                    assert(scale.includes(note), `${note} should be in A Minor scale`);
+                });
+            });
+
+            test('G Major V chord (D-F#-A) should use notes from G Major scale', () => {
+                const scale = getScale('G', 'major');
+                const chordNotes = ['D', 'F#', 'A']; // V chord in G Major
+                chordNotes.forEach(note => {
+                    assert(scale.includes(note), `${note} should be in G Major scale`);
+                });
+            });
+        });
+
+        describe('Scale Pattern Tests', () => {
+            test('Major scale pattern should follow W-W-H-W-W-W-H intervals', () => {
+                // W = 2 semitones, H = 1 semitone
+                const expectedIntervals = [2, 2, 1, 2, 2, 2, 1];
+                const actualIntervals = [];
+                
+                for (let i = 0; i < MAJOR_SCALE_PATTERN.length - 1; i++) {
+                    actualIntervals.push(MAJOR_SCALE_PATTERN[i + 1] - MAJOR_SCALE_PATTERN[i]);
+                }
+                // Last interval wraps around
+                actualIntervals.push(12 - MAJOR_SCALE_PATTERN[6] + MAJOR_SCALE_PATTERN[0]);
+                
+                assertArrayEqual(actualIntervals, expectedIntervals);
+            });
+
+            test('Minor scale pattern should follow W-H-W-W-H-W-W intervals', () => {
+                // W = 2 semitones, H = 1 semitone
+                const expectedIntervals = [2, 1, 2, 2, 1, 2, 2];
+                const actualIntervals = [];
+                
+                for (let i = 0; i < MINOR_SCALE_PATTERN.length - 1; i++) {
+                    actualIntervals.push(MINOR_SCALE_PATTERN[i + 1] - MINOR_SCALE_PATTERN[i]);
+                }
+                // Last interval wraps around
+                actualIntervals.push(12 - MINOR_SCALE_PATTERN[6] + MINOR_SCALE_PATTERN[0]);
+                
+                assertArrayEqual(actualIntervals, expectedIntervals);
+            });
+        });
+
+        describe('Edge Case Tests', () => {
+            test('B Major scale should wrap around correctly', () => {
+                const scale = getScale('B', 'major');
+                assertArrayEqual(scale, ['B', 'C#', 'D#', 'E', 'F#', 'G#', 'A#']);
+            });
+
+            test('C# Major scale should work with sharp root', () => {
+                const scale = getScale('C#', 'major');
+                assertArrayEqual(scale, ['C#', 'D#', 'F', 'F#', 'G#', 'A#', 'C']);
+            });
+
+            test('All 12 keys should generate valid scales', () => {
+                NOTES.forEach(key => {
+                    const majorScale = getScale(key, 'major');
+                    const minorScale = getScale(key, 'minor');
+                    
+                    assertEqual(majorScale.length, 7, `${key} Major scale should have 7 notes`);
+                    assertEqual(minorScale.length, 7, `${key} Minor scale should have 7 notes`);
+                    
+                    // Check no duplicates
+                    const uniqueMajor = [...new Set(majorScale)];
+                    const uniqueMinor = [...new Set(minorScale)];
+                    
+                    assertEqual(uniqueMajor.length, 7, `${key} Major scale should have 7 unique notes`);
+                    assertEqual(uniqueMinor.length, 7, `${key} Minor scale should have 7 unique notes`);
+                });
+            });
+        });
+
+        // Display summary
+        window.addEventListener('load', () => {
+            const passed = testResults.filter(r => r.passed).length;
+            const failed = testResults.filter(r => !r.passed).length;
+            const total = testResults.length;
+            const totalTime = testResults.reduce((sum, r) => sum + r.duration, 0);
+            
+            document.getElementById('test-summary').innerHTML = `
+                <h2>Test Summary</h2>
+                <p>Total: ${total} | Passed: ${passed} | Failed: ${failed}</p>
+                <p>Total time: ${totalTime.toFixed(2)}ms</p>
+                ${failed === 0 ? '<p style="color: #27ae60;">✓ All tests passed!</p>' : '<p style="color: #e74c3c;">✗ Some tests failed</p>'}
+            `;
+        });
+    </script>
+</body>
+</html>
