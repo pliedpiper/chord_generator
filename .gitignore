@@ -18,6 +18,7 @@ Thumbs.db
 
 # Claude AI settings
 .claude/
+CLAUDE.md
 
 # Environment and config files
 .env
