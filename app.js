@@ -194,14 +194,28 @@ let animationId;
 // Initialize canvas
 function initCanvas() {
     canvas = document.getElementById('waveform-canvas');
+    if (!canvas) {
+        console.error('Waveform canvas not found');
+        return;
+    }
     ctx = canvas.getContext('2d');
+    if (!ctx) {
+        console.error('Could not get 2D context');
+        return;
+    }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 }
 
 function resizeCanvas() {
+    if (!canvas) return;
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    // Clear canvas after resize
+    if (ctx) {
+        ctx.fillStyle = 'rgba(10, 10, 10, 1)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 }
 
 // Initialize Tone.js
@@ -210,10 +224,10 @@ async function initAudio() {
     
     // Create analyser for waveform visualization
     analyser = new Tone.Analyser('waveform', 256);
-    analyser.toDestination();
     
-    synth = new Tone.PolySynth(Tone.Synth).connect(analyser);
-    bassSynth = new Tone.Synth().connect(analyser);
+    // Create synths and connect them to analyser, then to destination
+    synth = new Tone.PolySynth(Tone.Synth).connect(analyser).toDestination();
+    bassSynth = new Tone.Synth().connect(analyser).toDestination();
     
     // Initialize drum kit
     drumKit = {
@@ -227,7 +241,7 @@ async function initAudio() {
                 sustain: 0.01,
                 release: 0.8
             }
-        }).connect(analyser),
+        }).connect(analyser).toDestination(),
         snare: new Tone.NoiseSynth({
             noise: { type: 'white' },
             envelope: {
@@ -235,7 +249,7 @@ async function initAudio() {
                 decay: 0.2,
                 sustain: 0
             }
-        }).connect(analyser),
+        }).connect(analyser).toDestination(),
         hihat: new Tone.MetalSynth({
             frequency: 200,
             envelope: {
@@ -247,7 +261,7 @@ async function initAudio() {
             modulationIndex: 32,
             resonance: 4000,
             octaves: 1.5
-        }).connect(analyser),
+        }).connect(analyser).toDestination(),
         openHihat: new Tone.MetalSynth({
             frequency: 200,
             envelope: {
@@ -259,7 +273,7 @@ async function initAudio() {
             modulationIndex: 32,
             resonance: 4000,
             octaves: 1.5
-        }).connect(analyser)
+        }).connect(analyser).toDestination()
     };
     
     // Set volumes
@@ -679,12 +693,12 @@ async function playChordProgression() {
         
         if (isPlaying) {
             // Stop playback
+            stopAllTransport();
             isPlaying = false;
             isPlayingBass = false;
+            isPlayingDrums = false;
             playBtn.textContent = 'Play';
-            if (playTogetherBtn) {
-                playTogetherBtn.textContent = 'Play Together';
-            }
+            stopVisualization();
             return;
         }
         
@@ -692,150 +706,23 @@ async function playChordProgression() {
         playBtn.textContent = 'Stop';
         startVisualization();
         
-        // Play chords in sequence using simpler approach
-        let chordIndex = 0;
-        const playNextChord = () => {
-            if (!isPlaying) {
-                // Stop playback
-                isPlaying = false;
-                isPlayingBass = false;
-                playBtn.textContent = 'Play';
-                if (playTogetherBtn) {
-                    playTogetherBtn.textContent = 'Play Together';
-                }
-                document.querySelectorAll('.chord-item').forEach(el => {
-                    el.classList.remove('playing');
-                });
-                document.querySelectorAll('.key').forEach(key => {
-                    key.classList.remove('active');
-                });
-                stopVisualization();
-                return;
-            }
-            
-            // Loop back to beginning if we've reached the end and arpeggio is on
-            if (chordIndex >= currentChords.length) {
-                if (arpeggioToggle.checked) {
-                    chordIndex = 0; // Loop back to start
-                } else {
-                    // Non-arpeggio mode: stop when done
-                    isPlaying = false;
-                    isPlayingBass = false;
-                    playBtn.textContent = 'Play';
-                    if (playTogetherBtn) {
-                        playTogetherBtn.textContent = 'Play Together';
-                    }
-                    document.querySelectorAll('.chord-item').forEach(el => {
-                        el.classList.remove('playing');
-                    });
-                    document.querySelectorAll('.key').forEach(key => {
-                        key.classList.remove('active');
-                    });
-                    stopVisualization();
-                    return;
-                }
-            }
-            
-            const chord = currentChords[chordIndex];
-            const notes = chord.notes.map(note => `${note}4`);
-            
-            // Update visual feedback
-            document.querySelectorAll('.chord-item').forEach(el => {
-                el.classList.remove('playing');
-            });
-            const chordElement = document.getElementById(`chord-${chordIndex}`);
-            if (chordElement) {
-                chordElement.classList.add('playing');
-            }
-            
-            if (arpeggioToggle.checked) {
-                // Get arpeggio pattern
-                const pattern = arpeggioType.value;
-                let noteSequence = [];
-                
-                // Create note sequence based on pattern
-                switch (pattern) {
-                    case 'up':
-                        noteSequence = [...notes];
-                        break;
-                    case 'down':
-                        noteSequence = [...notes].reverse();
-                        break;
-                    case 'up-down':
-                        noteSequence = [...notes, ...notes.slice(1, -1).reverse()];
-                        break;
-                    case 'down-up':
-                        noteSequence = [...notes].reverse().concat(notes.slice(1, -1));
-                        break;
-                    case 'random':
-                        // Play each note once in random order
-                        noteSequence = [...notes].sort(() => Math.random() - 0.5);
-                        break;
-                    case 'chord-tone':
-                        // Play root, fifth, third, root (octave higher)
-                        noteSequence = [notes[0], notes[2], notes[1], notes[0].slice(0, -1) + '5'];
-                        break;
-                    default:
-                        noteSequence = [...notes];
-                }
-                
-                // Arpeggiate the chord
-                const arpSpeed = 150; // milliseconds between notes
-                noteSequence.forEach((note, index) => {
-                    setTimeout(() => {
-                        if (isPlaying) {
-                            synth.triggerAttackRelease(note, '8n');
-                            // Highlight individual keys during arpeggio
-                            document.querySelectorAll('.key').forEach(key => {
-                                key.classList.remove('active');
-                            });
-                            const noteWithoutOctave = note.slice(0, -1);
-                            const keyElement = document.querySelector(`[data-note="${noteWithoutOctave}4"]`);
-                            const keyElement5 = document.querySelector(`[data-note="${noteWithoutOctave}5"]`);
-                            if (keyElement) keyElement.classList.add('active');
-                            if (keyElement5) keyElement5.classList.add('active');
-                        }
-                    }, index * arpSpeed);
-                });
-                
-                // After arpeggio completes, show all chord notes
-                setTimeout(() => {
-                    if (isPlaying) {
-                        highlightKeys(chord.notes);
-                    }
-                }, noteSequence.length * arpSpeed);
-            } else {
-                // Play the chord normally
-                synth.triggerAttackRelease(notes, '2n');
-                highlightKeys(chord.notes);
-            }
-            
-            // Move to next chord
-            chordIndex++;
-            if (isPlaying) {
-                let nextDelay;
-                if (arpeggioToggle.checked) {
-                    const pattern = arpeggioType.value;
-                    let sequenceLength = notes.length;
-                    if (pattern === 'up-down' || pattern === 'down-up') {
-                        sequenceLength = notes.length * 2 - 2;
-                    } else if (pattern === 'chord-tone') {
-                        sequenceLength = 4;
-                    }
-                    // No pause - only the arpeggio duration
-                    nextDelay = sequenceLength * 150;
-                } else {
-                    nextDelay = 1000;
-                }
-                setTimeout(playNextChord, nextDelay);
-            }
-        };
+        // Create unified playback with only chords
+        stopAllTransport();
         
-        // Start playing
-        playNextChord();
+        // Schedule chord progression
+        if (arpeggioToggle.checked) {
+            createArpeggioSequence();
+        } else {
+            createChordSequence();
+        }
+        
+        // Start transport
+        transportStarted = true;
+        Tone.Transport.start();
         
     } catch (error) {
         console.error('Error playing chord progression:', error);
+        stopAllTransport();
         isPlaying = false;
         playBtn.textContent = 'Play';
         alert('Error playing audio. Please try again.');
@@ -1141,8 +1028,10 @@ async function playBassLine() {
     }
     
     if (isPlayingBass) {
+        stopAllTransport();
         isPlayingBass = false;
         playBassBtn.textContent = 'Play Bass';
+        stopVisualization();
         return;
     }
     
@@ -1150,40 +1039,13 @@ async function playBassLine() {
     playBassBtn.textContent = 'Stop Bass';
     startVisualization();
     
-    let noteIndex = 0;
-    const playNextBassNote = () => {
-        if (!isPlayingBass || noteIndex >= currentBassNotes.length) {
-            isPlayingBass = false;
-            playBassBtn.textContent = 'Play Bass';
-            document.querySelectorAll('.bass-note').forEach(el => {
-                el.classList.remove('playing');
-            });
-            stopVisualization();
-            return;
-        }
-        
-        const bassNote = currentBassNotes[noteIndex];
-        
-        // Visual feedback
-        document.querySelectorAll('.bass-note').forEach(el => {
-            el.classList.remove('playing');
-        });
-        const noteElement = document.getElementById(`bass-${noteIndex}`);
-        if (noteElement) {
-            noteElement.classList.add('playing');
-        }
-        
-        // Play the note
-        bassSynth.triggerAttackRelease(bassNote.note, bassNote.duration);
-        
-        // Calculate delay based on note duration
-        const durationMs = Tone.Time(bassNote.duration).toMilliseconds();
-        
-        noteIndex++;
-        setTimeout(playNextBassNote, durationMs);
-    };
+    // Create unified playback with only bass
+    stopAllTransport();
+    createBassSequence();
     
-    playNextBassNote();
+    // Start transport
+    transportStarted = true;
+    Tone.Transport.start();
 }
 
 // Modified playback function to include bass
@@ -1204,10 +1066,12 @@ async function playChordProgressionWithBass() {
         }
         
         if (isPlaying || isPlayingBass) {
+            stopAllTransport();
             isPlaying = false;
             isPlayingBass = false;
             playTogetherBtn.textContent = 'Play Together';
             playBtn.textContent = 'Play';
+            stopVisualization();
             return;
         }
         
@@ -1216,176 +1080,26 @@ async function playChordProgressionWithBass() {
         playTogetherBtn.textContent = 'Stop';
         startVisualization();
         
-        // Play both chords and bass simultaneously
-        let chordIndex = 0;
-        let bassIndex = 0;
+        // Create unified playback with chords and bass
+        stopAllTransport();
         
-        const playNext = () => {
-            if (!isPlaying || !isPlayingBass) {
-                // Stop everything
-                isPlaying = false;
-                isPlayingBass = false;
-                playTogetherBtn.textContent = 'Play Together';
-                playBtn.textContent = 'Play';
-                document.querySelectorAll('.chord-item').forEach(el => {
-                    el.classList.remove('playing');
-                });
-                document.querySelectorAll('.bass-note').forEach(el => {
-                    el.classList.remove('playing');
-                });
-                document.querySelectorAll('.key').forEach(key => {
-                    key.classList.remove('active');
-                });
-                return;
-            }
-            
-            // Check if we're done with chords
-            if (chordIndex >= currentChords.length) {
-                if (arpeggioToggle.checked) {
-                    chordIndex = 0;
-                    bassIndex = 0;
-                } else {
-                    isPlaying = false;
-                    isPlayingBass = false;
-                    playTogetherBtn.textContent = 'Play Together';
-                    document.querySelectorAll('.chord-item').forEach(el => {
-                        el.classList.remove('playing');
-                    });
-                    document.querySelectorAll('.bass-note').forEach(el => {
-                        el.classList.remove('playing');
-                    });
-                    document.querySelectorAll('.key').forEach(key => {
-                        key.classList.remove('active');
-                    });
-                    stopVisualization();
-                    return;
-                }
-            }
-            
-            // Play current chord
-            const chord = currentChords[chordIndex];
-            const notes = chord.notes.map(note => `${note}4`);
-            
-            // Update chord visual feedback
-            document.querySelectorAll('.chord-item').forEach(el => {
-                el.classList.remove('playing');
-            });
-            const chordElement = document.getElementById(`chord-${chordIndex}`);
-            if (chordElement) {
-                chordElement.classList.add('playing');
-            }
-            
-            // Handle chord playback
-            if (arpeggioToggle.checked) {
-                // Arpeggio logic (same as before)
-                const pattern = arpeggioType.value;
-                let noteSequence = [];
-                
-                switch (pattern) {
-                    case 'up':
-                        noteSequence = [...notes];
-                        break;
-                    case 'down':
-                        noteSequence = [...notes].reverse();
-                        break;
-                    case 'up-down':
-                        noteSequence = [...notes, ...notes.slice(1, -1).reverse()];
-                        break;
-                    case 'down-up':
-                        noteSequence = [...notes].reverse().concat(notes.slice(1, -1));
-                        break;
-                    case 'random':
-                        noteSequence = [...notes].sort(() => Math.random() - 0.5);
-                        break;
-                    case 'chord-tone':
-                        noteSequence = [notes[0], notes[2], notes[1], notes[0].slice(0, -1) + '5'];
-                        break;
-                    default:
-                        noteSequence = [...notes];
-                }
-                
-                const arpSpeed = 150;
-                noteSequence.forEach((note, index) => {
-                    setTimeout(() => {
-                        if (isPlaying) {
-                            synth.triggerAttackRelease(note, '8n');
-                        }
-                    }, index * arpSpeed);
-                });
-            } else {
-                synth.triggerAttackRelease(notes, '2n');
-                highlightKeys(chord.notes);
-            }
-            
-            // Play bass notes for this chord
-            let bassDuration = 0;
-            const bassPattern = bassPatternSelect.value;
-            
-            // Calculate how many bass notes belong to this chord
-            let bassNotesForChord = [];
-            if (bassPattern === 'root') {
-                bassNotesForChord = [currentBassNotes[chordIndex]];
-            } else if (bassPattern === 'root-fifth' || bassPattern === 'walking') {
-                bassNotesForChord = currentBassNotes.slice(chordIndex * 2, (chordIndex + 1) * 2);
-            } else if (bassPattern === 'arpeggiated') {
-                const notesPerChord = currentChords[0].notes.length;
-                bassNotesForChord = currentBassNotes.slice(chordIndex * notesPerChord, (chordIndex + 1) * notesPerChord);
-            } else if (bassPattern === 'pedal') {
-                bassNotesForChord = [currentBassNotes[chordIndex]];
-            }
-            
-            // Play bass notes for this chord
-            bassNotesForChord.forEach((bassNote, i) => {
-                if (bassNote) {
-                    const delay = i * Tone.Time(bassNote.duration).toMilliseconds();
-                    setTimeout(() => {
-                        if (isPlayingBass) {
-                            bassSynth.triggerAttackRelease(bassNote.note, bassNote.duration);
-                            
-                            // Update bass visual feedback
-                            document.querySelectorAll('.bass-note').forEach(el => {
-                                el.classList.remove('playing');
-                            });
-                            const actualBassIndex = currentBassNotes.indexOf(bassNote);
-                            const bassElement = document.getElementById(`bass-${actualBassIndex}`);
-                            if (bassElement) {
-                                bassElement.classList.add('playing');
-                            }
-                        }
-                    }, delay);
-                    bassDuration += Tone.Time(bassNote.duration).toMilliseconds();
-                }
-            });
-            
-            // Move to next chord
-            chordIndex++;
-            
-            // Calculate next delay
-            let nextDelay;
-            if (arpeggioToggle.checked) {
-                const pattern = arpeggioType.value;
-                let sequenceLength = notes.length;
-                if (pattern === 'up-down' || pattern === 'down-up') {
-                    sequenceLength = notes.length * 2 - 2;
-                } else if (pattern === 'chord-tone') {
-                    sequenceLength = 4;
-                }
-                nextDelay = sequenceLength * 150;
-            } else {
-                nextDelay = 1000;
-            }
-            
-            // Use the longer of chord or bass duration
-            nextDelay = Math.max(nextDelay, bassDuration);
-            
-            setTimeout(playNext, nextDelay);
-        };
+        // Schedule chord progression
+        if (arpeggioToggle.checked) {
+            createArpeggioSequence();
+        } else {
+            createChordSequence();
+        }
         
-        // Start playback
-        playNext();
+        // Schedule bass line
+        createBassSequence();
+        
+        // Start transport
+        transportStarted = true;
+        Tone.Transport.start();
         
     } catch (error) {
         console.error('Error playing with bass:', error);
+        stopAllTransport();
         isPlaying = false;
         isPlayingBass = false;
         playTogetherBtn.textContent = 'Play Together';
@@ -1821,8 +1535,10 @@ async function playDrumPattern() {
     }
     
     if (isPlayingDrums) {
+        stopAllTransport();
         isPlayingDrums = false;
         playDrumsBtn.textContent = 'Play Drums';
+        stopVisualization();
         return;
     }
     
@@ -1830,46 +1546,13 @@ async function playDrumPattern() {
     playDrumsBtn.textContent = 'Stop Drums';
     startVisualization();
     
-    const stepDuration = '16n'; // 16th notes
-    let currentStep = 0;
+    // Create unified playback with only drums
+    stopAllTransport();
+    createDrumLoop();
     
-    const playStep = () => {
-        if (!isPlayingDrums) {
-            playDrumsBtn.textContent = 'Play Drums';
-            stopVisualization();
-            return;
-        }
-        
-        // Play drums for current step
-        if (currentDrumPattern.kick[currentStep]) {
-            drumKit.kick.triggerAttackRelease('C1', '8n');
-        }
-        if (currentDrumPattern.snare[currentStep]) {
-            drumKit.snare.triggerAttackRelease('8n');
-        }
-        if (currentDrumPattern.hihat[currentStep]) {
-            drumKit.hihat.triggerAttackRelease('32n');
-        }
-        if (currentDrumPattern.openHihat[currentStep]) {
-            drumKit.openHihat.triggerAttackRelease('16n');
-        }
-        
-        // Visual feedback - highlight current playing column
-        document.querySelectorAll('.drum-hit').forEach((hit) => {
-            const stepIndex = parseInt(hit.dataset.index);
-            if (stepIndex === currentStep) {
-                hit.classList.add('playing');
-            } else {
-                hit.classList.remove('playing');
-            }
-        });
-        
-        currentStep = (currentStep + 1) % 16;
-        
-        setTimeout(playStep, Tone.Time(stepDuration).toMilliseconds());
-    };
-    
-    playStep();
+    // Start transport
+    transportStarted = true;
+    Tone.Transport.start();
 }
 
 // OLD PATTERN DATA REMOVED - replaced with generateRandomDrumPattern function above
@@ -1901,6 +1584,7 @@ async function playAll() {
         
         if (isPlaying || isPlayingBass || isPlayingDrums) {
             // Stop everything
+            stopAllTransport();
             isPlaying = false;
             isPlayingBass = false;
             isPlayingDrums = false;
@@ -1908,6 +1592,7 @@ async function playAll() {
             playBtn.textContent = 'Play';
             playBassBtn.textContent = 'Play Bass';
             playDrumsBtn.textContent = 'Play Drums';
+            stopVisualization();
             return;
         }
         
@@ -1915,208 +1600,24 @@ async function playAll() {
         playAllBtn.textContent = 'Stop All';
         startVisualization();
         
-        // Start drums if enabled
+        // Create unified playback with all enabled instruments
+        createUnifiedPlayback();
+        
+        // Set playing states based on what's enabled
+        if (bassEnabledToggle.checked && currentBassNotes && currentBassNotes.length > 0) {
+            isPlayingBass = true;
+        }
         if (drumsEnabledToggle.checked && currentDrumPattern) {
             isPlayingDrums = true;
-            const stepDuration = '16n';
-            let drumStep = 0;
-            
-            const playDrumStep = () => {
-                if (!isPlayingDrums) {
-                    return;
-                }
-                
-                // Play drums for current step
-                if (currentDrumPattern.kick[drumStep]) {
-                    drumKit.kick.triggerAttackRelease('C1', '8n');
-                }
-                if (currentDrumPattern.snare[drumStep]) {
-                    drumKit.snare.triggerAttackRelease('8n');
-                }
-                if (currentDrumPattern.hihat[drumStep]) {
-                    drumKit.hihat.triggerAttackRelease('32n');
-                }
-                if (currentDrumPattern.openHihat[drumStep]) {
-                    drumKit.openHihat.triggerAttackRelease('16n');
-                }
-                
-                drumStep = (drumStep + 1) % 16;
-                
-                setTimeout(playDrumStep, Tone.Time(stepDuration).toMilliseconds());
-            };
-            
-            playDrumStep();
         }
         
-        // Play chords and bass
-        let chordIndex = 0;
-        
-        const playNext = () => {
-            if (!isPlaying) {
-                // Stop everything
-                isPlaying = false;
-                isPlayingBass = false;
-                isPlayingDrums = false;
-                playAllBtn.textContent = 'Play All';
-                playBtn.textContent = 'Play';
-                document.querySelectorAll('.chord-item').forEach(el => {
-                    el.classList.remove('playing');
-                });
-                document.querySelectorAll('.bass-note').forEach(el => {
-                    el.classList.remove('playing');
-                });
-                document.querySelectorAll('.key').forEach(key => {
-                    key.classList.remove('active');
-                });
-                return;
-            }
-            
-            // Check if we're done with chords
-            if (chordIndex >= currentChords.length) {
-                if (arpeggioToggle.checked) {
-                    chordIndex = 0;
-                } else {
-                    isPlaying = false;
-                    isPlayingBass = false;
-                    isPlayingDrums = false;
-                    playAllBtn.textContent = 'Play All';
-                    document.querySelectorAll('.chord-item').forEach(el => {
-                        el.classList.remove('playing');
-                    });
-                    document.querySelectorAll('.bass-note').forEach(el => {
-                        el.classList.remove('playing');
-                    });
-                    document.querySelectorAll('.key').forEach(key => {
-                        key.classList.remove('active');
-                    });
-                    stopVisualization();
-                    return;
-                }
-            }
-            
-            // Play current chord
-            const chord = currentChords[chordIndex];
-            const notes = chord.notes.map(note => `${note}4`);
-            
-            // Update chord visual feedback
-            document.querySelectorAll('.chord-item').forEach(el => {
-                el.classList.remove('playing');
-            });
-            const chordElement = document.getElementById(`chord-${chordIndex}`);
-            if (chordElement) {
-                chordElement.classList.add('playing');
-            }
-            
-            // Handle chord playback
-            if (arpeggioToggle.checked) {
-                // Arpeggio logic
-                const pattern = arpeggioType.value;
-                let noteSequence = [];
-                
-                switch (pattern) {
-                    case 'up':
-                        noteSequence = [...notes];
-                        break;
-                    case 'down':
-                        noteSequence = [...notes].reverse();
-                        break;
-                    case 'up-down':
-                        noteSequence = [...notes, ...notes.slice(1, -1).reverse()];
-                        break;
-                    case 'down-up':
-                        noteSequence = [...notes].reverse().concat(notes.slice(1, -1));
-                        break;
-                    case 'random':
-                        noteSequence = [...notes].sort(() => Math.random() - 0.5);
-                        break;
-                    case 'chord-tone':
-                        noteSequence = [notes[0], notes[2], notes[1], notes[0].slice(0, -1) + '5'];
-                        break;
-                    default:
-                        noteSequence = [...notes];
-                }
-                
-                const arpSpeed = 150;
-                noteSequence.forEach((note, index) => {
-                    setTimeout(() => {
-                        if (isPlaying) {
-                            synth.triggerAttackRelease(note, '8n');
-                        }
-                    }, index * arpSpeed);
-                });
-            } else {
-                synth.triggerAttackRelease(notes, '2n');
-                highlightKeys(chord.notes);
-            }
-            
-            // Play bass notes if enabled
-            if (bassEnabledToggle.checked && currentBassNotes.length > 0) {
-                let bassDuration = 0;
-                const bassPattern = bassPatternSelect.value;
-                
-                // Calculate bass notes for this chord
-                let bassNotesForChord = [];
-                if (bassPattern === 'root') {
-                    bassNotesForChord = [currentBassNotes[chordIndex]];
-                } else if (bassPattern === 'root-fifth' || bassPattern === 'walking') {
-                    bassNotesForChord = currentBassNotes.slice(chordIndex * 2, (chordIndex + 1) * 2);
-                } else if (bassPattern === 'arpeggiated') {
-                    const notesPerChord = currentChords[0].notes.length;
-                    bassNotesForChord = currentBassNotes.slice(chordIndex * notesPerChord, (chordIndex + 1) * notesPerChord);
-                } else if (bassPattern === 'pedal') {
-                    bassNotesForChord = [currentBassNotes[chordIndex]];
-                }
-                
-                // Play bass notes
-                bassNotesForChord.forEach((bassNote, i) => {
-                    if (bassNote) {
-                        const delay = i * Tone.Time(bassNote.duration).toMilliseconds();
-                        setTimeout(() => {
-                            if (isPlaying) {
-                                bassSynth.triggerAttackRelease(bassNote.note, bassNote.duration);
-                                
-                                // Update bass visual feedback
-                                document.querySelectorAll('.bass-note').forEach(el => {
-                                    el.classList.remove('playing');
-                                });
-                                const actualBassIndex = currentBassNotes.indexOf(bassNote);
-                                const bassElement = document.getElementById(`bass-${actualBassIndex}`);
-                                if (bassElement) {
-                                    bassElement.classList.add('playing');
-                                }
-                            }
-                        }, delay);
-                        bassDuration += Tone.Time(bassNote.duration).toMilliseconds();
-                    }
-                });
-            }
-            
-            // Move to next chord
-            chordIndex++;
-            
-            // Calculate next delay
-            let nextDelay;
-            if (arpeggioToggle.checked) {
-                const pattern = arpeggioType.value;
-                let sequenceLength = notes.length;
-                if (pattern === 'up-down' || pattern === 'down-up') {
-                    sequenceLength = notes.length * 2 - 2;
-                } else if (pattern === 'chord-tone') {
-                    sequenceLength = 4;
-                }
-                nextDelay = sequenceLength * 150;
-            } else {
-                nextDelay = 1000;
-            }
-            
-            setTimeout(playNext, nextDelay);
-        };
-        
-        // Start playback
-        playNext();
+        // Start transport
+        transportStarted = true;
+        Tone.Transport.start();
         
     } catch (error) {
         console.error('Error playing all:', error);
+        stopAllTransport();
         isPlaying = false;
         isPlayingBass = false;
         isPlayingDrums = false;
@@ -2133,10 +1634,16 @@ if (clearDrumsBtn) {
 
 // Waveform visualization
 function drawWaveform() {
-    if (!analyser) return;
+    if (!analyser || !ctx || !canvas) return;
     
     // Get waveform data
     waveformArray = analyser.getValue();
+    
+    // Check if we're getting valid data
+    if (!waveformArray || waveformArray.length === 0) {
+        animationId = requestAnimationFrame(drawWaveform);
+        return;
+    }
     
     // Fade effect
     ctx.fillStyle = 'rgba(10, 10, 10, 0.05)';
@@ -2193,6 +1700,293 @@ function stopVisualization() {
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }, 100);
     }
+}
+
+// Transport-based sequencing variables
+let chordSequence = null;
+let bassSequence = null;
+let drumLoop = null;
+let arpeggioPattern = null;
+let transportStarted = false;
+
+// Stop all transport-based playback
+function stopAllTransport() {
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+    
+    if (chordSequence) {
+        chordSequence.stop();
+        chordSequence.dispose();
+        chordSequence = null;
+    }
+    if (bassSequence) {
+        bassSequence.stop();
+        bassSequence.dispose();
+        bassSequence = null;
+    }
+    if (drumLoop) {
+        drumLoop.stop();
+        drumLoop.dispose();
+        drumLoop = null;
+    }
+    if (arpeggioPattern) {
+        arpeggioPattern.stop();
+        arpeggioPattern.dispose();
+        arpeggioPattern = null;
+    }
+    
+    transportStarted = false;
+    
+    // Clear visual states
+    document.querySelectorAll('.chord-item').forEach(el => {
+        el.classList.remove('playing');
+    });
+    document.querySelectorAll('.bass-note').forEach(el => {
+        el.classList.remove('playing');
+    });
+    document.querySelectorAll('.drum-hit').forEach(el => {
+        el.classList.remove('playing');
+    });
+    document.querySelectorAll('.key').forEach(key => {
+        key.classList.remove('active');
+    });
+    
+    // Reset button states
+    if (playBtn && isPlaying) playBtn.textContent = 'Play';
+    if (playBassBtn && isPlayingBass) playBassBtn.textContent = 'Play Bass';
+    if (playDrumsBtn && isPlayingDrums) playDrumsBtn.textContent = 'Play Drums';
+    if (playTogetherBtn && (isPlaying || isPlayingBass)) playTogetherBtn.textContent = 'Play Together';
+    if (playAllBtn && (isPlaying || isPlayingBass || isPlayingDrums)) playAllBtn.textContent = 'Play All';
+    
+    // Reset playing states
+    isPlaying = false;
+    isPlayingBass = false;
+    isPlayingDrums = false;
+    
+    // Stop visualization
+    stopVisualization();
+}
+
+// Create a unified playback system
+function createUnifiedPlayback() {
+    stopAllTransport();
+    
+    // Set tempo
+    Tone.Transport.bpm.value = 120;
+    
+    // Schedule chord progression first (as it determines the loop length for arpeggio mode)
+    if (currentChords && currentChords.length > 0) {
+        if (arpeggioToggle.checked) {
+            createArpeggioSequence();
+        } else {
+            createChordSequence();
+        }
+    }
+    
+    // Schedule bass line (after chords so it can match arpeggio timing)
+    if (bassEnabledToggle.checked && currentBassNotes && currentBassNotes.length > 0) {
+        createBassSequence();
+    }
+    
+    // Schedule drums
+    if (drumsEnabledToggle.checked && currentDrumPattern) {
+        createDrumLoop();
+    }
+}
+
+// Create chord sequence for regular (non-arpeggio) playback
+function createChordSequence() {
+    const chordEvents = [];
+    currentChords.forEach((chord, index) => {
+        chordEvents.push({
+            time: index * 2, // Each chord lasts 2 beats
+            chord: chord,
+            index: index
+        });
+    });
+    
+    chordSequence = new Tone.Part((time, event) => {
+        const notes = event.chord.notes.map(note => `${note}4`);
+        synth.triggerAttackRelease(notes, '2n', time);
+        
+        // Schedule visual updates
+        Tone.Draw.schedule(() => {
+            // Update chord display
+            document.querySelectorAll('.chord-item').forEach(el => {
+                el.classList.remove('playing');
+            });
+            const chordElement = document.getElementById(`chord-${event.index}`);
+            if (chordElement) {
+                chordElement.classList.add('playing');
+            }
+            
+            // Update keyboard
+            highlightKeys(event.chord.notes);
+        }, time);
+    }, chordEvents);
+    
+    chordSequence.loop = true;
+    chordSequence.loopEnd = currentChords.length * 2;
+    chordSequence.start(0);
+}
+
+// Create arpeggio sequence
+function createArpeggioSequence() {
+    const pattern = arpeggioType.value;
+    const arpSpeed = 0.125; // 16th notes
+    const events = [];
+    let currentTime = 0;
+    
+    currentChords.forEach((chord, chordIndex) => {
+        const notes = chord.notes.map(note => `${note}4`);
+        let noteSequence = [];
+        
+        // Create note sequence based on pattern
+        switch (pattern) {
+            case 'up':
+                noteSequence = [...notes];
+                break;
+            case 'down':
+                noteSequence = [...notes].reverse();
+                break;
+            case 'up-down':
+                noteSequence = [...notes, ...notes.slice(1, -1).reverse()];
+                break;
+            case 'down-up':
+                noteSequence = [...notes].reverse().concat(notes.slice(1, -1));
+                break;
+            case 'random':
+                noteSequence = [...notes].sort(() => Math.random() - 0.5);
+                break;
+            case 'chord-tone':
+                noteSequence = [notes[0], notes[2], notes[1], notes[0].slice(0, -1) + '5'];
+                break;
+            default:
+                noteSequence = [...notes];
+        }
+        
+        // Add events for each note in the sequence (continuous, no gaps)
+        noteSequence.forEach((note, noteIndex) => {
+            events.push({
+                time: currentTime,
+                note: note,
+                chord: chord,
+                chordIndex: chordIndex,
+                isLastNote: noteIndex === noteSequence.length - 1
+            });
+            currentTime += arpSpeed;
+        });
+    });
+    
+    arpeggioPattern = new Tone.Part((time, event) => {
+        synth.triggerAttackRelease(event.note, '16n', time);
+        
+        Tone.Draw.schedule(() => {
+            // Update chord display
+            document.querySelectorAll('.chord-item').forEach(el => {
+                el.classList.remove('playing');
+            });
+            const chordElement = document.getElementById(`chord-${event.chordIndex}`);
+            if (chordElement) {
+                chordElement.classList.add('playing');
+            }
+            
+            // Update keyboard for individual note
+            document.querySelectorAll('.key').forEach(key => {
+                key.classList.remove('active');
+            });
+            const noteWithoutOctave = event.note.slice(0, -1);
+            const keyElement = document.querySelector(`[data-note="${noteWithoutOctave}4"]`);
+            const keyElement5 = document.querySelector(`[data-note="${noteWithoutOctave}5"]`);
+            if (keyElement) keyElement.classList.add('active');
+            if (keyElement5) keyElement5.classList.add('active');
+            
+            // Show full chord on last note
+            if (event.isLastNote) {
+                setTimeout(() => {
+                    if (transportStarted) {
+                        highlightKeys(event.chord.notes);
+                    }
+                }, 100);
+            }
+        }, time);
+    }, events);
+    
+    arpeggioPattern.loop = true;
+    arpeggioPattern.loopEnd = currentTime; // Use the actual total time of all notes
+    arpeggioPattern.start(0);
+}
+
+// Create bass sequence
+function createBassSequence() {
+    const bassEvents = [];
+    let currentTime = 0;
+    
+    currentBassNotes.forEach((bassNote, index) => {
+        bassEvents.push({
+            time: currentTime,
+            note: bassNote.note,
+            duration: bassNote.duration,
+            index: index
+        });
+        currentTime += Tone.Time(bassNote.duration).toSeconds();
+    });
+    
+    bassSequence = new Tone.Part((time, event) => {
+        bassSynth.triggerAttackRelease(event.note, event.duration, time);
+        
+        Tone.Draw.schedule(() => {
+            document.querySelectorAll('.bass-note').forEach(el => {
+                el.classList.remove('playing');
+            });
+            const bassElement = document.getElementById(`bass-${event.index}`);
+            if (bassElement) {
+                bassElement.classList.add('playing');
+            }
+        }, time);
+    }, bassEvents);
+    
+    bassSequence.loop = true;
+    // Match the loop end to the chord/arpeggio timing
+    if (arpeggioToggle.checked && arpeggioPattern) {
+        bassSequence.loopEnd = arpeggioPattern.loopEnd;
+    } else {
+        bassSequence.loopEnd = currentChords.length * 2;
+    }
+    bassSequence.start(0);
+}
+
+// Create drum loop
+function createDrumLoop() {
+    drumLoop = new Tone.Sequence((time, step) => {
+        // Play drums for current step
+        if (currentDrumPattern.kick[step]) {
+            drumKit.kick.triggerAttackRelease('C1', '8n', time);
+        }
+        if (currentDrumPattern.snare[step]) {
+            drumKit.snare.triggerAttackRelease('8n', time);
+        }
+        if (currentDrumPattern.hihat[step]) {
+            drumKit.hihat.triggerAttackRelease('32n', time);
+        }
+        if (currentDrumPattern.openHihat[step]) {
+            drumKit.openHihat.triggerAttackRelease('16n', time);
+        }
+        
+        // Visual feedback
+        Tone.Draw.schedule(() => {
+            document.querySelectorAll('.drum-hit').forEach((hit) => {
+                const stepIndex = parseInt(hit.dataset.index);
+                if (stepIndex === step) {
+                    hit.classList.add('playing');
+                } else {
+                    hit.classList.remove('playing');
+                }
+            });
+        }, time);
+    }, [...Array(16).keys()], '16n');
+    
+    drumLoop.start(0);
 }
 
 // Initialize on load
