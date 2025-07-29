@@ -844,47 +844,154 @@ function randomizeAllParameters() {
 
 // Export MIDI file
 function exportMIDI() {
-    // Create a new MIDI file
-    const midi = new Midi.Midi();
+    // Check what needs to be exported
+    const includeChords = currentChords && currentChords.length > 0;
+    const includeBass = bassEnabledToggle.checked && currentBassNotes && currentBassNotes.length > 0;
+    const includeDrums = drumsEnabledToggle.checked && currentDrumPattern;
     
-    // Create a track
-    const track = midi.addTrack();
-    track.name = "Chord Progression";
+    if (!includeChords && !includeBass && !includeDrums) {
+        alert('No content to export. Please generate a chord progression first.');
+        return;
+    }
     
-    // Set tempo
-    midi.header.tempos = [{ bpm: 120, ticks: 0 }];
+    // Create separate MIDI files based on what's active
+    const filesToDownload = [];
     
-    // Add chords to track
-    let currentTime = 0;
-    const noteDuration = 0.5; // Half note duration in seconds
-    
-    currentChords.forEach(chord => {
-        // Convert note names to MIDI numbers
-        chord.notes.forEach(note => {
-            const noteIndex = NOTES.indexOf(note);
-            const midiNote = 60 + noteIndex; // C4 = 60
-            
-            track.addNote({
-                midi: midiNote,
-                time: currentTime,
-                duration: noteDuration,
-                velocity: 80
+    // Export chords
+    if (includeChords) {
+        const chordsMidi = new Midi.Midi();
+        const chordsTrack = chordsMidi.addTrack();
+        chordsTrack.name = "Chord Progression";
+        
+        // Set tempo
+        chordsMidi.header.tempos = [{ bpm: 120, ticks: 0 }];
+        
+        // Add chords to track
+        let currentTime = 0;
+        const noteDuration = 2; // Whole note duration in seconds (matching playback)
+        
+        currentChords.forEach(chord => {
+            // Convert note names to MIDI numbers
+            chord.notes.forEach(note => {
+                const noteIndex = NOTES.indexOf(note);
+                const midiNote = 60 + noteIndex; // C4 = 60
+                
+                chordsTrack.addNote({
+                    midi: midiNote,
+                    time: currentTime,
+                    duration: noteDuration,
+                    velocity: 80
+                });
             });
+            
+            currentTime += noteDuration;
         });
         
-        currentTime += noteDuration;
+        filesToDownload.push({
+            midi: chordsMidi,
+            filename: 'chords.mid'
+        });
+    }
+    
+    // Export bass
+    if (includeBass) {
+        const bassMidi = new Midi.Midi();
+        const bassTrack = bassMidi.addTrack();
+        bassTrack.name = "Bass Line";
+        
+        // Set tempo
+        bassMidi.header.tempos = [{ bpm: 120, ticks: 0 }];
+        
+        // Add bass notes to track
+        let currentTime = 0;
+        
+        currentBassNotes.forEach(bassNote => {
+            const noteName = bassNote.note.slice(0, -1); // Remove octave number
+            const octave = parseInt(bassNote.note.slice(-1));
+            const noteIndex = NOTES.indexOf(noteName);
+            const midiNote = (octave + 1) * 12 + noteIndex; // Convert to MIDI number
+            
+            const duration = Tone.Time(bassNote.duration).toSeconds();
+            
+            bassTrack.addNote({
+                midi: midiNote,
+                time: currentTime,
+                duration: duration,
+                velocity: 70
+            });
+            
+            currentTime += duration;
+        });
+        
+        filesToDownload.push({
+            midi: bassMidi,
+            filename: 'bass.mid'
+        });
+    }
+    
+    // Export drums
+    if (includeDrums) {
+        const drumsMidi = new Midi.Midi();
+        const drumsTrack = drumsMidi.addTrack();
+        drumsTrack.name = "Drum Pattern";
+        drumsTrack.channel = 9; // Standard MIDI drum channel
+        
+        // Set tempo
+        drumsMidi.header.tempos = [{ bpm: 120, ticks: 0 }];
+        
+        // Standard MIDI drum mappings
+        const drumMidiNotes = {
+            kick: 36,     // Bass Drum 1
+            snare: 38,    // Snare Drum 1
+            hihat: 42,    // Closed Hi-Hat
+            openHihat: 46 // Open Hi-Hat
+        };
+        
+        // Add drum hits
+        const sixteenthDuration = 0.125; // 16th note in seconds at 120 BPM
+        
+        // Calculate total pattern length to match chord progression
+        const patternRepeats = Math.ceil((currentChords.length * 2) / 2); // Each chord is 2 beats, pattern is 4 beats (16 sixteenths)
+        
+        for (let repeat = 0; repeat < patternRepeats; repeat++) {
+            for (let step = 0; step < 16; step++) {
+                const currentTime = (repeat * 16 + step) * sixteenthDuration;
+                
+                // Add each drum hit at this step
+                Object.keys(currentDrumPattern).forEach(instrument => {
+                    if (currentDrumPattern[instrument][step] === 1) {
+                        drumsTrack.addNote({
+                            midi: drumMidiNotes[instrument],
+                            time: currentTime,
+                            duration: sixteenthDuration,
+                            velocity: instrument === 'kick' ? 100 : 80
+                        });
+                    }
+                });
+            }
+        }
+        
+        filesToDownload.push({
+            midi: drumsMidi,
+            filename: 'drums.mid'
+        });
+    }
+    
+    // Download all files
+    filesToDownload.forEach((file, index) => {
+        // Add delay between downloads to avoid browser blocking
+        setTimeout(() => {
+            const blob = new Blob([file.midi.toArray()], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.filename;
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        }, index * 100);
     });
-    
-    // Convert to blob and download
-    const blob = new Blob([midi.toArray()], { type: 'audio/midi' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'chord-progression.mid';
-    a.click();
-    
-    URL.revokeObjectURL(url);
 }
 
 // Event listeners
