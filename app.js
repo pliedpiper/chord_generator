@@ -842,156 +842,243 @@ function randomizeAllParameters() {
     }, 100);
 }
 
+// Simple MIDI file writer class
+class SimpleMIDI {
+    constructor() {
+        this.tracks = [];
+        this.ticksPerQuarter = 480;
+        this.tempo = 500000; // microseconds per quarter note (120 BPM)
+    }
+    
+    addTrack() {
+        const track = [];
+        this.tracks.push(track);
+        return track;
+    }
+    
+    noteToMidi(noteName, octave) {
+        const noteIndex = NOTES.indexOf(noteName);
+        return (octave + 1) * 12 + noteIndex;
+    }
+    
+    // Convert seconds to MIDI ticks
+    secondsToTicks(seconds) {
+        const quarterNotesPerSecond = 60 / 120; // at 120 BPM
+        const ticks = Math.round(seconds * quarterNotesPerSecond * this.ticksPerQuarter);
+        return ticks;
+    }
+    
+    // Variable length quantity encoding for MIDI
+    encodeVarLength(value) {
+        const bytes = [];
+        do {
+            let byte = value & 0x7F;
+            value >>= 7;
+            if (bytes.length > 0) byte |= 0x80;
+            bytes.unshift(byte);
+        } while (value > 0);
+        return bytes;
+    }
+    
+    // Build the MIDI file
+    toArray() {
+        const output = [];
+        
+        // Header chunk
+        output.push(...[0x4D, 0x54, 0x68, 0x64]); // "MThd"
+        output.push(...[0x00, 0x00, 0x00, 0x06]); // Header length
+        output.push(...[0x00, 0x01]); // Format type 1
+        output.push(...[0x00, this.tracks.length]); // Number of tracks
+        output.push(...[0x01, 0xE0]); // Ticks per quarter note (480)
+        
+        // Track chunks
+        this.tracks.forEach((track, trackIndex) => {
+            const trackData = [];
+            
+            // Track name (optional)
+            trackData.push(...[0x00, 0xFF, 0x03]);
+            const trackName = `Track ${trackIndex + 1}`;
+            trackData.push(trackName.length);
+            for (let i = 0; i < trackName.length; i++) {
+                trackData.push(trackName.charCodeAt(i));
+            }
+            
+            // Set tempo (first track only)
+            if (trackIndex === 0) {
+                trackData.push(...[0x00, 0xFF, 0x51, 0x03]);
+                trackData.push((this.tempo >> 16) & 0xFF);
+                trackData.push((this.tempo >> 8) & 0xFF);
+                trackData.push(this.tempo & 0xFF);
+            }
+            
+            // Add note events
+            let lastTime = 0;
+            track.forEach(event => {
+                const deltaTime = event.time - lastTime;
+                trackData.push(...this.encodeVarLength(deltaTime));
+                
+                // Note on
+                trackData.push(0x90 | (event.channel || 0));
+                trackData.push(event.note);
+                trackData.push(event.velocity);
+                
+                // Note off
+                trackData.push(...this.encodeVarLength(event.duration));
+                trackData.push(0x80 | (event.channel || 0));
+                trackData.push(event.note);
+                trackData.push(0x00);
+                
+                lastTime = event.time + event.duration;
+            });
+            
+            // End of track
+            trackData.push(...[0x00, 0xFF, 0x2F, 0x00]);
+            
+            // Write track chunk
+            output.push(...[0x4D, 0x54, 0x72, 0x6B]); // "MTrk"
+            const trackLength = trackData.length;
+            output.push((trackLength >> 24) & 0xFF);
+            output.push((trackLength >> 16) & 0xFF);
+            output.push((trackLength >> 8) & 0xFF);
+            output.push(trackLength & 0xFF);
+            output.push(...trackData);
+        });
+        
+        return new Uint8Array(output);
+    }
+}
+
 // Export MIDI file
 function exportMIDI() {
-    // Check what needs to be exported
-    const includeChords = currentChords && currentChords.length > 0;
-    const includeBass = bassEnabledToggle.checked && currentBassNotes && currentBassNotes.length > 0;
-    const includeDrums = drumsEnabledToggle.checked && currentDrumPattern;
-    
-    if (!includeChords && !includeBass && !includeDrums) {
-        alert('No content to export. Please generate a chord progression first.');
-        return;
-    }
-    
-    // Create separate MIDI files based on what's active
-    const filesToDownload = [];
-    
-    // Export chords
-    if (includeChords) {
-        const chordsMidi = new Midi.Midi();
-        const chordsTrack = chordsMidi.addTrack();
-        chordsTrack.name = "Chord Progression";
+    try {
+        // Check what needs to be exported
+        const includeChords = currentChords && currentChords.length > 0;
+        const includeBass = bassEnabledToggle.checked && currentBassNotes && currentBassNotes.length > 0;
+        const includeDrums = drumsEnabledToggle.checked && currentDrumPattern;
         
-        // Set tempo
-        chordsMidi.header.tempos = [{ bpm: 120, ticks: 0 }];
-        
-        // Add chords to track
-        let currentTime = 0;
-        const noteDuration = 2; // Whole note duration in seconds (matching playback)
-        
-        currentChords.forEach(chord => {
-            // Convert note names to MIDI numbers
-            chord.notes.forEach(note => {
-                const noteIndex = NOTES.indexOf(note);
-                const midiNote = 60 + noteIndex; // C4 = 60
-                
-                chordsTrack.addNote({
-                    midi: midiNote,
-                    time: currentTime,
-                    duration: noteDuration,
-                    velocity: 80
-                });
-            });
-            
-            currentTime += noteDuration;
-        });
-        
-        filesToDownload.push({
-            midi: chordsMidi,
-            filename: 'chords.mid'
-        });
-    }
-    
-    // Export bass
-    if (includeBass) {
-        const bassMidi = new Midi.Midi();
-        const bassTrack = bassMidi.addTrack();
-        bassTrack.name = "Bass Line";
-        
-        // Set tempo
-        bassMidi.header.tempos = [{ bpm: 120, ticks: 0 }];
-        
-        // Add bass notes to track
-        let currentTime = 0;
-        
-        currentBassNotes.forEach(bassNote => {
-            const noteName = bassNote.note.slice(0, -1); // Remove octave number
-            const octave = parseInt(bassNote.note.slice(-1));
-            const noteIndex = NOTES.indexOf(noteName);
-            const midiNote = (octave + 1) * 12 + noteIndex; // Convert to MIDI number
-            
-            const duration = Tone.Time(bassNote.duration).toSeconds();
-            
-            bassTrack.addNote({
-                midi: midiNote,
-                time: currentTime,
-                duration: duration,
-                velocity: 70
-            });
-            
-            currentTime += duration;
-        });
-        
-        filesToDownload.push({
-            midi: bassMidi,
-            filename: 'bass.mid'
-        });
-    }
-    
-    // Export drums
-    if (includeDrums) {
-        const drumsMidi = new Midi.Midi();
-        const drumsTrack = drumsMidi.addTrack();
-        drumsTrack.name = "Drum Pattern";
-        drumsTrack.channel = 9; // Standard MIDI drum channel
-        
-        // Set tempo
-        drumsMidi.header.tempos = [{ bpm: 120, ticks: 0 }];
-        
-        // Standard MIDI drum mappings
-        const drumMidiNotes = {
-            kick: 36,     // Bass Drum 1
-            snare: 38,    // Snare Drum 1
-            hihat: 42,    // Closed Hi-Hat
-            openHihat: 46 // Open Hi-Hat
-        };
-        
-        // Add drum hits
-        const sixteenthDuration = 0.125; // 16th note in seconds at 120 BPM
-        
-        // Calculate total pattern length to match chord progression
-        const patternRepeats = Math.ceil((currentChords.length * 2) / 2); // Each chord is 2 beats, pattern is 4 beats (16 sixteenths)
-        
-        for (let repeat = 0; repeat < patternRepeats; repeat++) {
-            for (let step = 0; step < 16; step++) {
-                const currentTime = (repeat * 16 + step) * sixteenthDuration;
-                
-                // Add each drum hit at this step
-                Object.keys(currentDrumPattern).forEach(instrument => {
-                    if (currentDrumPattern[instrument][step] === 1) {
-                        drumsTrack.addNote({
-                            midi: drumMidiNotes[instrument],
-                            time: currentTime,
-                            duration: sixteenthDuration,
-                            velocity: instrument === 'kick' ? 100 : 80
-                        });
-                    }
-                });
-            }
+        if (!includeChords && !includeBass && !includeDrums) {
+            alert('No content to export. Please generate a chord progression first.');
+            return;
         }
         
-        filesToDownload.push({
-            midi: drumsMidi,
-            filename: 'drums.mid'
+        // Create separate MIDI files based on what's active
+        const filesToDownload = [];
+        
+        // Export chords
+        if (includeChords) {
+            const chordsMidi = new SimpleMIDI();
+            const chordsTrack = chordsMidi.addTrack();
+            
+            let currentTime = 0;
+            currentChords.forEach(chord => {
+                chord.notes.forEach(note => {
+                    const midiNote = chordsMidi.noteToMidi(note, 4);
+                    chordsTrack.push({
+                        time: chordsMidi.secondsToTicks(currentTime),
+                        note: midiNote,
+                        velocity: 80,
+                        duration: chordsMidi.secondsToTicks(2),
+                        channel: 0
+                    });
+                });
+                currentTime += 2;
+            });
+            
+            filesToDownload.push({
+                data: chordsMidi.toArray(),
+                filename: 'chords.mid'
+            });
+        }
+        
+        // Export bass
+        if (includeBass) {
+            const bassMidi = new SimpleMIDI();
+            const bassTrack = bassMidi.addTrack();
+            
+            let currentTime = 0;
+            currentBassNotes.forEach(bassNote => {
+                const noteName = bassNote.note.slice(0, -1);
+                const octave = parseInt(bassNote.note.slice(-1));
+                const midiNote = bassMidi.noteToMidi(noteName, octave);
+                const duration = Tone.Time(bassNote.duration).toSeconds();
+                
+                bassTrack.push({
+                    time: bassMidi.secondsToTicks(currentTime),
+                    note: midiNote,
+                    velocity: 70,
+                    duration: bassMidi.secondsToTicks(duration),
+                    channel: 0
+                });
+                
+                currentTime += duration;
+            });
+            
+            filesToDownload.push({
+                data: bassMidi.toArray(),
+                filename: 'bass.mid'
+            });
+        }
+        
+        // Export drums
+        if (includeDrums) {
+            const drumsMidi = new SimpleMIDI();
+            const drumsTrack = drumsMidi.addTrack();
+            
+            const drumMidiNotes = {
+                kick: 36,
+                snare: 38,
+                hihat: 42,
+                openHihat: 46
+            };
+            
+            const sixteenthDuration = 0.125;
+            const patternRepeats = Math.ceil((currentChords.length * 2) / 2);
+            
+            for (let repeat = 0; repeat < patternRepeats; repeat++) {
+                for (let step = 0; step < 16; step++) {
+                    const currentTime = (repeat * 16 + step) * sixteenthDuration;
+                    
+                    Object.keys(currentDrumPattern).forEach(instrument => {
+                        if (currentDrumPattern[instrument][step] === 1) {
+                            drumsTrack.push({
+                                time: drumsMidi.secondsToTicks(currentTime),
+                                note: drumMidiNotes[instrument],
+                                velocity: instrument === 'kick' ? 100 : 80,
+                                duration: drumsMidi.secondsToTicks(sixteenthDuration),
+                                channel: 9 // Drum channel
+                            });
+                        }
+                    });
+                }
+            }
+            
+            filesToDownload.push({
+                data: drumsMidi.toArray(),
+                filename: 'drums.mid'
+            });
+        }
+        
+        // Download all files
+        filesToDownload.forEach((file, index) => {
+            setTimeout(() => {
+                const blob = new Blob([file.data], { type: 'audio/midi' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                URL.revokeObjectURL(url);
+            }, index * 100);
         });
+        
+    } catch (error) {
+        console.error('Error exporting MIDI:', error);
+        alert('Error exporting MIDI file. Please check the console for details.');
     }
-    
-    // Download all files
-    filesToDownload.forEach((file, index) => {
-        // Add delay between downloads to avoid browser blocking
-        setTimeout(() => {
-            const blob = new Blob([file.midi.toArray()], { type: 'audio/midi' });
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = file.filename;
-            a.click();
-            
-            URL.revokeObjectURL(url);
-        }, index * 100);
-    });
 }
 
 // Event listeners
@@ -2101,6 +2188,9 @@ window.addEventListener('load', async () => {
     initCanvas();
     await initAudio();
     createKeyboard();
+    
+    // MIDI export is now handled by custom SimpleMIDI class
+    console.log('Chord Generator initialized');
     
     // Also ensure audio context starts on first user interaction
     document.addEventListener('click', async () => {

@@ -86,3 +86,6 @@ notes.txt
 
 # Generated documentation
 docs/generated/
+
+# Test files
+midi-player.html
