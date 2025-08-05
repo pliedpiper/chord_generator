@@ -43,8 +43,7 @@ chord_generator/
 ├── styles.css         # Dark theme styling
 ├── test.html          # Browser-based test runner
 ├── chord-tests.js     # Chord generation test suite
-├── run-tests.js       # Node.js test runner
-└── CLAUDE.md          # Development guidelines
+└── run-tests.js       # Node.js test runner
 ```
 
 ## Testing
@@ -78,12 +77,3 @@ node run-tests.js
 3. Commit your changes (`git commit -am 'Add new feature'`)
 4. Push to the branch (`git push origin feature/your-feature`)
 5. Create a Pull Request
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).
-
-## Acknowledgments
-
-- Tone.js team for the excellent web audio library
-- Music theory concepts adapted from classical harmony principles
